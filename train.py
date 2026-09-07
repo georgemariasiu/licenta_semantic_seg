@@ -1,4 +1,6 @@
+import csv
 import os
+import time
 import torch
 from tqdm import tqdm
 
@@ -31,6 +33,17 @@ def load_checkpoint(model, optimizer, scheduler, checkpoint_dir):
     print(f"Resuming from epoch {checkpoint['epoch']}")
     return checkpoint['epoch'], checkpoint['best_val_loss']
 
+def log_epoch(checkpoint_dir, row):
+
+    path = os.path.join(checkpoint_dir, "history.csv")
+    write_header = not os.path.exists(path)
+
+    with open(path, "a", newline="") as f:
+        w = csv.writer(f)
+        if write_header:
+            w.writerow(["epoch", "train_loss", "val_loss", "lr", "seconds", "is_best"])
+        w.writerow(row)
+
 def train_model(model, train_loader, val_loader, device, optimizer, criterion, scheduler, run_name, epochs=10, resume=None):
 
     checkpoint_dir = os.path.join("checkpoints", run_name)
@@ -45,6 +58,7 @@ def train_model(model, train_loader, val_loader, device, optimizer, criterion, s
 
     for epoch in range(start_epoch, epochs):
         print(f"\nEpoch {epoch + 1}/{epochs}")
+        epoch_start = time.time()
         model.train()
 
         running_loss = 0.0
@@ -82,6 +96,7 @@ def train_model(model, train_loader, val_loader, device, optimizer, criterion, s
         val_loss /= len(val_loader.dataset)
         print(f"Validation Loss: {val_loss:.4f}")
 
+        current_lr = optimizer.param_groups[0]["lr"]
         scheduler.step(val_loss)
 
         if val_loss < best_val_loss:
@@ -89,6 +104,15 @@ def train_model(model, train_loader, val_loader, device, optimizer, criterion, s
             save_best(model, checkpoint_dir)
 
         save_latest(epoch + 1, best_val_loss, model, optimizer, scheduler, checkpoint_dir)
+
+        log_epoch(checkpoint_dir, [
+            epoch + 1,
+            round(epoch_loss, 6),
+            round(val_loss, 6),
+            current_lr,
+            round(time.time() - epoch_start, 1),
+            int(val_loss < best_val_loss),
+        ])
 
     print('DONE!')
     return model

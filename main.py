@@ -6,21 +6,43 @@ from dataset import UAVID_CLASS_MAP
 from models import model_deeplabv3plus, model_dinov2_linear, model_dinov2_decoder
 
 import cv2
+import json
 import numpy as np
 import os
+import time
 import torch
 import torch.optim as optim
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
+UAVID_CLASS_NAMES = {
+    "building",
+    "road",
+    "static car",
+    "tree",
+    "low vegetation",
+    "human",
+    "moving car",
+    "background clutter"
+}
+
+BUILDERS = {
+    "deeplabv3plus": model_deeplabv3plus.create_model,
+    "dinov2_linear": model_dinov2_linear.create_model,
+    "dinov2_decoder": model_dinov2_decoder.create_model
+}
+
 if __name__ == '__main__':
+
+    checkpoint_dir = os.path.join("checkpoints", param_uavid.RUN_NAME)
+    os.makedirs(checkpoint_dir, exist_ok=True)
 
     train_dataset = UAVid(
         image_dir=param_uavid.IMAGE_TRAIN,
         mask_dir=param_uavid.MASK_TRAIN,
         size=param_uavid.IMAGE_SIZE,
         augment=True,
-        perspective_safe=True,
+        perspective_safe=param_uavid.PERSPECTIVE_SAFE,
     )
     val_dataset = UAVid(
         image_dir=param_uavid.IMAGE_VAL,
@@ -44,36 +66,22 @@ if __name__ == '__main__':
 
     ###
 
-    # model = model_deeplabv3plus.create_model(param_uavid.NUM_CLASSES)
-    #
-    # optimizer = optim.Adam(
-    #     model.parameters(),
-    #     lr=param_uavid.LEARNING_RATE,
-    #     weight_decay=1e-4
-    # )
-
-    # model = model_dinov2_linear.create_model(param_uavid.NUM_CLASSES)
-    #
-    # optimizer = optim.Adam(
-    #     filter(lambda p: p.requires_grad, model.parameters()),
-    #     lr=param_uavid.LEARNING_RATE,
-    #     weight_decay=1e-4
-    # )
-
-    model = model_dinov2_decoder.create_model(param_uavid.NUM_CLASSES)
+    model = BUILDERS[param_uavid.MODEL](param_uavid.NUM_CLASSES)
 
     optimizer = optim.Adam(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=param_uavid.LEARNING_RATE,
-        weight_decay=1e-4
+        weight_decay=param_uavid.WEIGHT_DECAY
     )
 
     class_weights, class_freq = weights.compute_class_weights(
         param_uavid.MASK_TRAIN,
         param_uavid.NUM_CLASSES,
         size=(param_uavid.IMAGE_SIZE[1], param_uavid.IMAGE_SIZE[0]),
+        scheme=param_uavid.WEIGHT_SCHEME,
         cache_path=f"cache/train_dist_{param_uavid.IMAGE_SIZE[0]}.json"
     )
+    class_weights_np = np.asarray(class_weights, dtype=np.float64)
     class_weights = torch.tensor(class_weights, dtype=torch.float32).to(param_uavid.DEVICE)
     criterion = nn.CrossEntropyLoss(weight=class_weights, ignore_index=IGNORE_INDEX)
 
@@ -84,28 +92,8 @@ if __name__ == '__main__':
         patience=5
     )
 
-    run_deeplabv3plus_resnet50 = (
-        f"deeplabv3plus_resnet50"
-        f"_lr{param_uavid.LEARNING_RATE}"
-        f"_bs{param_uavid.BATCH_SIZE}"
-        f"_ep{param_uavid.NUM_EPOCHS}"
-    )
-
-    run_dinov2_vitb14_linear = (
-        f"dinov2_vitb14_linear"
-        f"_lr{param_uavid.LEARNING_RATE}"
-        f"_bs{param_uavid.BATCH_SIZE}"
-        f"_ep{param_uavid.NUM_EPOCHS}"
-    )
-
-    run_dinov2_vitb14_dec1 = (
-        f"dinov2_vitb14_dec1"
-        f"_lr{param_uavid.LEARNING_RATE}"
-        f"_bs{param_uavid.BATCH_SIZE}"
-        f"_ep{param_uavid.NUM_EPOCHS}"
-    )
-
-    train.train_model(
+    tstart = time.time()
+    model, best_epoch, best_val_loss = train.train_model(
         model,
         train_loader,
         val_loader,
@@ -113,10 +101,11 @@ if __name__ == '__main__':
         optimizer,
         criterion,
         scheduler,
-        run_dinov2_vitb14_dec1, # !!!
+        param_uavid.RUN_NAME,
         param_uavid.NUM_EPOCHS,
         resume=None
     )
+    tend = time.time() - tstart
 
     ###
 
@@ -126,7 +115,6 @@ if __name__ == '__main__':
     for i, iou in enumerate(latest_iou):
         print(f"  Class {i}: {iou:.4f}")
 
-    checkpoint_dir = os.path.join("checkpoints", run_dinov2_vitb14_dec1)  # !!!
     best_path = os.path.join(checkpoint_dir, "best.pth")
     model.load_state_dict(torch.load(best_path, map_location=param_uavid.DEVICE, weights_only=True))
     model = model.to(param_uavid.DEVICE)
