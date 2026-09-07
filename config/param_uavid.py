@@ -13,4 +13,5 @@ IMAGE_SIZE = (518, 518)
 BATCH_SIZE = 4
 NUM_EPOCHS = 30
 LEARNING_RATE = 1e-4
+PERSPECTIVE_SAFE = True
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
