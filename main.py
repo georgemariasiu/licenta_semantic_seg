@@ -128,6 +128,8 @@ if __name__ == '__main__':
     for i, iou in enumerate(best_iou_per_class):
         print(f"  Class {i}: {iou:.4f}")
 
+    ###
+
     palette = np.zeros((param_uavid.NUM_CLASSES, 3), dtype=np.uint8)
     for color, idx in UAVID_CLASS_MAP.items():
         palette[idx] = color

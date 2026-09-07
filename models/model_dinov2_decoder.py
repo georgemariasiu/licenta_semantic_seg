@@ -76,7 +76,7 @@ class DINOv2UNetDecoder(nn.Module):
         self.re_fine = Reassemble(embed_dim, 64, scale=4.0)
         self.re_mid = Reassemble(embed_dim, 128, scale=2.0)
         self.re_low = Reassemble(embed_dim, 256, scale=1.0)
-        self.re_bottle = Reassemble(embed_dim, 512, scale=0.5)
+        self.re_bottle = Reassemble(embed_dim, 512, scale=1.0)
 
         self.up0 = UpBlock(in_ch=512, skip_ch=256, out_ch=256)
         self.up1 = UpBlock(in_ch=256, skip_ch=128, out_ch=128)
