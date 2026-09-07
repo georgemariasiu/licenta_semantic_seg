@@ -41,7 +41,7 @@ def log_epoch(checkpoint_dir, row):
     with open(path, "a", newline="") as f:
         w = csv.writer(f)
         if write_header:
-            w.writerow(["epoch", "train_loss", "val_loss", "lr", "seconds", "is_best"])
+            w.writerow(["epoch", "train_loss", "val_loss", "lr", "seconds", "is_best_epoch"])
         w.writerow(row)
 
 def train_model(model, train_loader, val_loader, device, optimizer, criterion, scheduler, run_name, epochs=10, resume=None):
@@ -52,6 +52,7 @@ def train_model(model, train_loader, val_loader, device, optimizer, criterion, s
     model = model.to(device)
 
     start_epoch = 0
+    best_epoch = -1
     best_val_loss = float("inf")
     if resume is not None:
         start_epoch, best_val_loss = load_checkpoint(model, optimizer, scheduler, resume)
@@ -99,8 +100,10 @@ def train_model(model, train_loader, val_loader, device, optimizer, criterion, s
         current_lr = optimizer.param_groups[0]["lr"]
         scheduler.step(val_loss)
 
-        if val_loss < best_val_loss:
+        is_best_epoch = val_loss < best_val_loss
+        if is_best_epoch:
             best_val_loss = val_loss
+            best_epoch = epoch + 1
             save_best(model, checkpoint_dir)
 
         save_latest(epoch + 1, best_val_loss, model, optimizer, scheduler, checkpoint_dir)
@@ -111,8 +114,8 @@ def train_model(model, train_loader, val_loader, device, optimizer, criterion, s
             round(val_loss, 6),
             current_lr,
             round(time.time() - epoch_start, 1),
-            int(val_loss < best_val_loss),
+            int(is_best_epoch),
         ])
 
     print('DONE!')
-    return model
+    return model, best_epoch, best_val_loss

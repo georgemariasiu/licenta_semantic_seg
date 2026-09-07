@@ -9,13 +9,14 @@ import cv2
 import json
 import numpy as np
 import os
+import platform
 import time
 import torch
 import torch.optim as optim
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-UAVID_CLASS_NAMES = {
+UAVID_CLASS_NAMES = [
     "building",
     "road",
     "static car",
@@ -24,12 +25,12 @@ UAVID_CLASS_NAMES = {
     "human",
     "moving car",
     "background clutter"
-}
+]
 
 BUILDERS = {
     "deeplabv3plus": model_deeplabv3plus.create_model,
-    "dinov2_linear": model_dinov2_linear.create_model,
-    "dinov2_decoder": model_dinov2_decoder.create_model
+    "dinov2linear": model_dinov2_linear.create_model,
+    "dinov2decoder": model_dinov2_decoder.create_model
 }
 
 if __name__ == '__main__':
@@ -68,11 +69,16 @@ if __name__ == '__main__':
 
     model = BUILDERS[param_uavid.MODEL](param_uavid.NUM_CLASSES)
 
+    n_trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    n_frozen = sum(p.numel() for p in model.parameters() if not p.requires_grad)
+
     optimizer = optim.Adam(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=param_uavid.LEARNING_RATE,
         weight_decay=param_uavid.WEIGHT_DECAY
     )
+
+    ###
 
     class_weights, class_freq = weights.compute_class_weights(
         param_uavid.MASK_TRAIN,
@@ -107,6 +113,10 @@ if __name__ == '__main__':
     )
     tend = time.time() - tstart
 
+    peak_memory_mb = None
+    if param_uavid.DEVICE.type == "cuda":
+        peak_memory_mb = torch.cuda.max_memory_allocated() / 1024 ** 2
+
     ###
 
     latest_miou, latest_iou, latest_prec, latest_rec, latest_cm = evaluate.evaluate_model(model, val_loader, param_uavid.DEVICE, param_uavid.NUM_CLASSES)
@@ -124,6 +134,53 @@ if __name__ == '__main__':
     print(f"Best mIoU: {best_miou}")
     for i, iou in enumerate(best_iou):
         print(f"  Class {i}: {iou:.4f}")
+
+    ###
+
+    results = {
+        "run_name": param_uavid.RUN_NAME,
+        "model": param_uavid.MODEL,
+        "image_size": list(param_uavid.IMAGE_SIZE),
+        "learning_rate": param_uavid.LEARNING_RATE,
+        "batch_size": param_uavid.BATCH_SIZE,
+        "num_epochs": param_uavid.NUM_EPOCHS,
+        "weight_decay": param_uavid.WEIGHT_DECAY,
+        "weight_scheme": param_uavid.WEIGHT_SCHEME,
+        "perspective_safe": param_uavid.PERSPECTIVE_SAFE,
+
+        "train_frames": len(train_dataset),
+        "val_frames": len(val_dataset),
+        "class_names": UAVID_CLASS_NAMES,
+        "class_frequency": class_freq.tolist(),
+        "class_weights": class_weights_np.tolist(),
+
+        "trainable_parameters": int(n_trainable),
+        "frozen_parameters": int(n_frozen),
+
+        "best_epoch": best_epoch,
+        "best_val_loss": float(best_val_loss),
+        "best_miou": float(best_miou),
+        "best_iou_per_class": [float(x) for x in best_iou],
+        "best_precision_per_class": [float(x) for x in best_prec],
+        "best_recall_per_class": [float(x) for x in best_rec],
+        "best_confusion_matrix": best_cm.tolist(),
+
+        "latest_miou": float(latest_miou),
+        "latest_iou_per_class": [float(x) for x in latest_iou],
+
+        "train_seconds_total": round(tend, 1),
+        "train_seconds_per_epoch": round(tend / param_uavid.NUM_EPOCHS, 1),
+        "peak_gpu_memory_mb": peak_memory_mb,
+
+        "device": str(param_uavid.DEVICE),
+        "gpu_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+        "torch_version": torch.__version__,
+        "platform": platform.platform(),
+    }
+
+    with open(os.path.join(checkpoint_dir, "results.json"), "w") as f:
+        json.dump(results, f, indent=2)
+    print(f"Wrote {os.path.join(checkpoint_dir, 'results.json')}")
 
     ###
 
