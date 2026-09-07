@@ -1,5 +1,6 @@
 import evaluate, train, weights
 from config import param_uavid
+from dataset import IGNORE_INDEX
 from dataset import UAVid
 from dataset import UAVID_CLASS_MAP
 from models import model_deeplabv3plus, model_dinov2_linear, model_dinov2_decoder
@@ -18,7 +19,8 @@ if __name__ == '__main__':
         image_dir=param_uavid.IMAGE_TRAIN,
         mask_dir=param_uavid.MASK_TRAIN,
         size=param_uavid.IMAGE_SIZE,
-        augment=True
+        augment=True,
+        perspective_safe=True,
     )
     val_dataset = UAVid(
         image_dir=param_uavid.IMAGE_VAL,
@@ -39,6 +41,8 @@ if __name__ == '__main__':
         shuffle=False,
         num_workers=2
     )
+
+    ###
 
     # model = model_deeplabv3plus.create_model(param_uavid.NUM_CLASSES)
     #
@@ -64,9 +68,14 @@ if __name__ == '__main__':
         weight_decay=1e-4
     )
 
-    class_weights = weights.compute_class_weights(param_uavid.MASK_TRAIN, param_uavid.NUM_CLASSES)
+    class_weights, class_freq = weights.compute_class_weights(
+        param_uavid.MASK_TRAIN,
+        param_uavid.NUM_CLASSES,
+        size=(param_uavid.IMAGE_SIZE[1], param_uavid.IMAGE_SIZE[0]),
+        cache_path=f"cache/train_dist_{param_uavid.IMAGE_SIZE[0]}.json"
+    )
     class_weights = torch.tensor(class_weights, dtype=torch.float32).to(param_uavid.DEVICE)
-    criterion = nn.CrossEntropyLoss(weight=class_weights)
+    criterion = nn.CrossEntropyLoss(weight=class_weights, ignore_index=IGNORE_INDEX)
 
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
@@ -111,10 +120,10 @@ if __name__ == '__main__':
 
     ###
 
-    latest_miou, latest_iou_per_class = evaluate.evaluate_model(model, val_loader, param_uavid.DEVICE, param_uavid.NUM_CLASSES)
+    latest_miou, latest_iou, latest_prec, latest_rec, latest_cm = evaluate.evaluate_model(model, val_loader, param_uavid.DEVICE, param_uavid.NUM_CLASSES)
 
     print(f"Latest mIoU: {latest_miou}")
-    for i, iou in enumerate(latest_iou_per_class):
+    for i, iou in enumerate(latest_iou):
         print(f"  Class {i}: {iou:.4f}")
 
     checkpoint_dir = os.path.join("checkpoints", run_dinov2_vitb14_dec1)  # !!!
@@ -122,10 +131,10 @@ if __name__ == '__main__':
     model.load_state_dict(torch.load(best_path, map_location=param_uavid.DEVICE, weights_only=True))
     model = model.to(param_uavid.DEVICE)
 
-    best_miou, best_iou_per_class = evaluate.evaluate_model(model, val_loader, param_uavid.DEVICE, param_uavid.NUM_CLASSES)
+    best_miou, best_iou, best_prec, best_rec, best_cm = evaluate.evaluate_model(model, val_loader, param_uavid.DEVICE, param_uavid.NUM_CLASSES)
 
     print(f"Best mIoU: {best_miou}")
-    for i, iou in enumerate(best_iou_per_class):
+    for i, iou in enumerate(best_iou):
         print(f"  Class {i}: {iou:.4f}")
 
     ###

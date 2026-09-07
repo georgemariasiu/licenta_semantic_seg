@@ -23,6 +23,12 @@ class DINOv2LinearSegmentation(nn.Module):
             kernel_size=1,
         )
 
+    def train(self, mode: bool = True):
+
+        super().train(mode)
+        self.encoder.eval()
+        return self
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
 
         B, C, H, W = x.shape

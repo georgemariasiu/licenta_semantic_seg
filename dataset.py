@@ -19,14 +19,17 @@ UAVID_CLASS_MAP = {
     (0, 0, 0): 7
 }
 
+IGNORE_INDEX = 255
+
 class UAVid(Dataset):
 
-    def __init__(self, image_dir, mask_dir, size=(512, 512), augment=False):
+    def __init__(self, image_dir, mask_dir, size=(512, 512), augment=False, perspective_safe=True):
 
         self.image_dir = image_dir
         self.mask_dir = mask_dir
         self.size = size
         self.augment = augment
+        self.perspective_safe = perspective_safe
 
         self.images = sorted(os.listdir(self.image_dir))
 
@@ -40,14 +43,19 @@ class UAVid(Dataset):
             image = F.hflip(image)
             mask = F.hflip(mask)
 
-        if random.random() < 0.5:
-            image = F.vflip(image)
-            mask = F.vflip(mask)
+        if not self.perspective_safe:
+            if random.random() < 0.5:
+                image = F.vflip(image)
+                mask = F.vflip(mask)
 
-        if random.random() < 0.5:
-            angle = random.choice([90, 180, 270])
-            image = F.rotate(image, angle)
-            mask = F.rotate(mask, angle)
+            if random.random() < 0.5:
+                angle = random.choice([90, 180, 270])
+                image = F.rotate(image, angle)
+                mask = F.rotate(mask, angle)
+        else:
+            if random.random() < 0.5:
+                image = F.rotate(image, 180)
+                mask = F.rotate(mask, 180)
 
         if random.random() < 0.5:
             i, j, h, w = torchvision.transforms.RandomCrop.get_params(image, output_size=(int(self.size[0] * 0.8), int(self.size[1] * 0.8)))
@@ -82,7 +90,7 @@ class UAVid(Dataset):
         mask = cv2.imread(self.mask_dir + '/' + self.images[i])
         mask = cv2.cvtColor(mask, cv2.COLOR_BGR2RGB)
 
-        mask_new = np.zeros(mask.shape[:2], dtype=np.uint8)
+        mask_new = np.full(mask.shape[:2], IGNORE_INDEX, dtype=np.uint8)
 
         R_channel = mask[:, :, 0]
         G_channel = mask[:, :, 1]
@@ -97,7 +105,7 @@ class UAVid(Dataset):
         mask_tensor = torch.from_numpy(mask_new).long()
 
         if self.size is not None:
-            image_tensor = F.resize(image_tensor, self.size, interpolation=F.InterpolationMode.BILINEAR)
+            image_tensor = F.resize(image_tensor, self.size, interpolation=F.InterpolationMode.BILINEAR, antialias=True)
             mask_tensor = mask_tensor.unsqueeze(0)
             mask_tensor = F.resize(mask_tensor, self.size, interpolation=F.InterpolationMode.NEAREST)
             mask_tensor = mask_tensor.squeeze(0)
