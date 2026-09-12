@@ -123,7 +123,7 @@ if __name__ == '__main__':
 
     print(f"Latest mIoU: {latest_miou}")
     for i, iou in enumerate(latest_iou):
-        print(f"  Class {i}: {iou:.4f}")
+        print(f"    Class {i}: {iou:.4f}")
 
     best_path = os.path.join(checkpoint_dir, "best.pth")
     model.load_state_dict(torch.load(best_path, map_location=param_uavid.DEVICE, weights_only=True))
@@ -164,9 +164,6 @@ if __name__ == '__main__':
         "best_precision_per_class": [float(x) for x in best_prec],
         "best_recall_per_class": [float(x) for x in best_rec],
         "best_confusion_matrix": best_cm.tolist(),
-
-        "latest_miou": float(latest_miou),
-        "latest_iou_per_class": [float(x) for x in latest_iou],
 
         "train_seconds_total": round(tend, 1),
         "train_seconds_per_epoch": round(tend / param_uavid.NUM_EPOCHS, 1),
